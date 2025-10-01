@@ -1,0 +1,24 @@
+# Visual Studio / .NET
+bin/
+obj/
+.vs/
+*.user
+*.suo
+
+# Build output
+*.dll
+*.exe
+*.pdb
+*.cache
+*.log
+
+# Paket manager
+packages/
+*.nupkg
+
+# JetBrains Rider
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
