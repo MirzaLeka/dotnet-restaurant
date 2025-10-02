@@ -14,56 +14,70 @@ namespace DotNet8Starter.BL.Services
 		private readonly string _password = "password";
 		private readonly string _queueName = "queue";
 
-		private IConnection _connection;
-		private Apache.NMS.ISession _session;
-		private IMessageConsumer _consumer;
-
 		protected override async Task ExecuteAsync(CancellationToken stoppingToken)
 		{
-			var factory = new ConnectionFactory(_brokerUri);
-			_connection = factory.CreateConnection(_username, _password);
-			_connection.Start();
-
-			_session = _connection.CreateSession(AcknowledgementMode.AutoAcknowledge);
-			var destination = _session.GetQueue(_queueName);
-			_consumer = _session.CreateConsumer(destination);
-
-
-			// (3) 
-            // Wait X minutes.
-		    // Drain everything currently in the queue.
-			// Process those messages(all of them).
-			// Repeat.
 			while (!stoppingToken.IsCancellationRequested)
 			{
-				// wait before starting next batch
-				await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
-
-				IMessage message;
-				var batch = new List<IMessage>();
-
-				// drain queue into a batch
-				while ((message = _consumer.ReceiveNoWait()) != null)
+				try
 				{
-					batch.Add(message);
-				}
+					var factory = new ConnectionFactory(_brokerUri);
+					using var connection = factory.CreateConnection(_username, _password);
+					connection.Start();
 
-				if (batch.Count > 0)
-				{
-					_logger.LogInformation("Processing {Count} messages", batch.Count);
+					using var session = connection.CreateSession(AcknowledgementMode.AutoAcknowledge);
+					var destination = session.GetQueue(_queueName);
+					using var consumer = session.CreateConsumer(destination);
 
-					foreach (var msg in batch)
+					while (!stoppingToken.IsCancellationRequested)
 					{
-						await HandleMessageAsync(msg);
+						// wait before starting next batch
+						await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
+
+						var batch = new List<IMessage>();
+						IMessage message;
+
+						// drain queue into a batch
+						while ((message = consumer.ReceiveNoWait()) != null)
+						{
+							batch.Add(message);
+						}
+
+						if (batch.Count > 0)
+						{
+							_logger.LogInformation("Processing {Count} messages", batch.Count);
+
+							foreach (var msg in batch)
+							{
+								try
+								{
+									await HandleMessageAsync(msg);
+								}
+								catch (Exception ex)
+								{
+									_logger.LogError(ex, "Failed to process message {CorrelationId}", msg.NMSCorrelationID);
+									// maybe dead-letter or retry
+								}
+							}
+						}
+						else
+						{
+							_logger.LogInformation("No messages in queue at this interval");
+						}
 					}
 				}
-				else
+				catch (NMSException ex)
 				{
-					_logger.LogInformation("No messages in queue at this interval");
+					_logger.LogError(ex, "AMQ connection failed. Retrying in 10 seconds...");
+					await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken);
+				}
+				catch (Exception ex)
+				{
+					_logger.LogError(ex, "Unexpected error in subscriber. Retrying in 10 seconds...");
+					await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken);
 				}
 			}
-
 		}
+
 
 		private async Task HandleMessageAsync(IMessage message)
 		{
