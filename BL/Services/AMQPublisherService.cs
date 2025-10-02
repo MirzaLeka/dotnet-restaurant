@@ -1,57 +1,63 @@
 ﻿using Apache.NMS.ActiveMQ;
 using Apache.NMS;
 using DotNet8Starter.BL.ServiceInterfaces;
+using DotNet8Starter.DL.Models;
 
 namespace DotNet8Starter.BL.Services
 {
-	public class AMQPublisherService : IAMQPublisherService
+	public class AMQPublisherService : IAMQPublisherService, IDisposable
 	{
-		private readonly string _brokerUri = "broker_uri";
+		private readonly IConnectionFactory _factory;
+		private readonly IConnection _connection;
+		private readonly Apache.NMS.ISession _session;
+
+		private readonly string _brokerUri = "broker_uri"; 
 		private readonly string _username = "username";
 		private readonly string _password = "password";
 		private readonly string _queueName = "queue";
 
-		public void SendOrder(string order)
+		public AMQPublisherService()
 		{
+			_factory = new ConnectionFactory(_brokerUri);
+			_connection = _factory.CreateConnection(_username, _password);
+			_connection.Start();
+
+			// You can reuse the session if you guard against threading issues,
+			// but safest is to create new session per message
+			_session = _connection.CreateSession(AcknowledgementMode.AutoAcknowledge);
+		}
+
+		public bool SendMessage<T>(string eventName, T payload, int occurrences = 1)
+		{
+			var order = OrderEvent.ToOrder(eventName, payload, occurrences);
+
 			try
 			{
-				// Create a Connection Factory
-				IConnectionFactory factory = new ConnectionFactory(_brokerUri);
-
-				// Connect to the Broker
-				using var connection = factory.CreateConnection(_username, _password);
-				connection.Start();
-
-				// Start a session
-				using var session = connection.CreateSession(AcknowledgementMode.AutoAcknowledge);
-
-				// Connect to the existing queue (e.g. my.queue)
+				// Create session per call if concurrency is high
+				using var session = _connection.CreateSession(AcknowledgementMode.AutoAcknowledge);
 				IDestination destination = session.GetQueue(_queueName);
 
-				// Set delivery mode
 				using var producer = session.CreateProducer(destination);
 				producer.DeliveryMode = MsgDeliveryMode.Persistent;
 
-				// Convert string message to ITextMessage and send it
 				ITextMessage message = session.CreateTextMessage(order);
 				message.NMSCorrelationID = Guid.NewGuid().ToString();
 
-				// nista bez configa
-				//int randomIndex = new Random().Next(0, 10);
-
-				//message.NMSPriority = (MsgPriority)randomIndex;
-
 				producer.Send(message);
-			}
-			catch (NMSException ex)
-			{
-				var a = ex;
+				return true;
 			}
 			catch (Exception ex)
 			{
-				var b = ex;
+				// log
 			}
+			return false;
 		}
 
+		public void Dispose()
+		{
+			_session?.Dispose();
+			_connection?.Dispose();
+		}
 	}
+
 }

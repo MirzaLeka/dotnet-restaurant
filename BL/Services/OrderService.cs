@@ -45,10 +45,7 @@ namespace DotNet8Starter.BL.Services
 
 		public async Task ContactRetaurant(MakeLemonade lemonade)
 		{
-			//lemonade.SugarSpoons = new Random().Next(1, 10);
-
-			var lemonadeOrder = OrderEvent.ToOrder(EventName.MAKE_LEMONADE, lemonade);
-			_amqService.SendOrder(lemonadeOrder);
+			_amqService.SendMessage(EventName.MAKE_LEMONADE, lemonade);
 		}
 
 		public async Task<double> GetKelvinTemperature(int temperatureC)
@@ -63,17 +60,5 @@ namespace DotNet8Starter.BL.Services
 
 			return 0;
 		}
-
-
-
-		//public Task<ExternalAPIResponse<T>> CreatePizza<T>(MakePizza pizza)
-		//{
-		//	throw new NotImplementedException();
-		//}
-
-		//public Task<ExternalAPIResponse<T>> CreateLemonade<T>(MakeLemonade lemonade)
-		//{
-		//	throw new NotImplementedException();
-		//}
 	}
 }

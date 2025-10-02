@@ -2,6 +2,7 @@
 {
 	public interface IAMQPublisherService
 	{
-		void SendOrder(string order);
+		bool SendMessage<T>(string eventName, T payload, int occurrences = 1);
+
 	}
 }

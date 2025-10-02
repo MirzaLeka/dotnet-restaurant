@@ -44,8 +44,10 @@ namespace DotNet8Starter.IoC
 			#endregion
 
 			services.AddScoped<IOrcherstrationService, OrcherstrationService>();
+			services.AddScoped<ILogOrcherstrationExceptionsService, LogOrcherstrationExceptionsService>();
 			services.AddScoped<IOrderService, OrderService>();
-			services.AddScoped<IAMQPublisherService, AMQPublisherService>();
+
+			services.AddSingleton<IAMQPublisherService, AMQPublisherService>();
 			services.AddHostedService<WorkerService>();
 
 			return services;

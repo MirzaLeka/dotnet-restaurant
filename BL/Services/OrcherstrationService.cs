@@ -69,7 +69,8 @@ namespace DotNet8Starter.BL.Services
 			{
 				if (createPizzaResponse.IsEligibleForRetry)
 				{
-					ExecuteEvent(envelope.EventName, pizza, envelope.Occurrences);
+					_amqService.SendMessage(envelope.EventName, pizza, envelope.Occurrences);
+
 				}
 				else
 				{
@@ -78,7 +79,8 @@ namespace DotNet8Starter.BL.Services
 				return;
 			}
 
-			ExecuteEvent(EventName.DELIVER_BILL, new { });
+			_amqService.SendMessage(EventName.DELIVER_BILL, new {});
+
 		}
 
 		private async Task HandleMakeLemonadeEvent(OrderEvent envelope)
@@ -93,7 +95,8 @@ namespace DotNet8Starter.BL.Services
 			{
 				if (createLemonadeResponse.IsEligibleForRetry)
 				{
-					ExecuteEvent(envelope.EventName, lemonade, envelope.Occurrences);
+					//ExecuteEvent(envelope.EventName, lemonade, envelope.Occurrences);
+					_amqService.SendMessage(envelope.EventName, lemonade, envelope.Occurrences);
 				}
 				else
 				{
@@ -104,14 +107,16 @@ namespace DotNet8Starter.BL.Services
 			}
 
 			var makePizzaRuquest = MakePizza.ToMakePizza("Margherita", createLemonadeResponse.ResponseBody.SecretIngridient);
-			ExecuteEvent(EventName.MAKE_PIZZA, makePizzaRuquest);
+
+			var isSuccessful = _amqService.SendMessage(EventName.MAKE_PIZZA, makePizzaRuquest);
+
+			if (!isSuccessful)
+			{
+				// log exception
+				Console.WriteLine("reroute to table");
+			}
 		}
 
-		private void ExecuteEvent(string eventName, object payload, int occurrences = 1)
-		{
-			var order = OrderEvent.ToOrder(eventName, payload, occurrences);
-			_amqService.SendOrder(order);
-		}
 	}
 }
 
