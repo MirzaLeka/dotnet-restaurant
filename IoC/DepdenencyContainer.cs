@@ -46,6 +46,8 @@ namespace DotNet8Starter.IoC
 			services.AddScoped<IOrcherstrationService, OrcherstrationService>();
 			services.AddScoped<ILogOrcherstrationExceptionsService, LogOrcherstrationExceptionsService>();
 			services.AddScoped<IOrderService, OrderService>();
+			services.AddScoped<IReplicationService, ReplicationService>();
+
 
 			services.AddSingleton<IAMQPublisherService, AMQPublisherService>();
 			services.AddHostedService<WorkerService>();

@@ -20,6 +20,20 @@ namespace DotNet8Starter.BL.Services
 			{
 				try
 				{
+					// Create new scope for DI services
+					using var scope = _serviceProvider.CreateScope();
+					var externalService = scope.ServiceProvider.GetRequiredService<IReplicationService>();
+
+					bool isDataReplicated = await externalService.GetReplicationStatus();
+
+					if (isDataReplicated)
+					{
+						_logger.LogInformation("Data is already replicated. Skipping subscription for this interval.");
+						await Task.Delay(TimeSpan.FromSeconds(60), stoppingToken);
+						continue; // skip this iteration — try again next minute
+					}
+
+					// only connect if replication not done
 					var factory = new ConnectionFactory(_brokerUri);
 					using var connection = factory.CreateConnection(_username, _password);
 					connection.Start();
@@ -31,12 +45,11 @@ namespace DotNet8Starter.BL.Services
 					while (!stoppingToken.IsCancellationRequested)
 					{
 						// wait before starting next batch
-						await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
+						await Task.Delay(TimeSpan.FromSeconds(60), stoppingToken);
 
 						var batch = new List<IMessage>();
 						IMessage message;
 
-						// drain queue into a batch
 						while ((message = consumer.ReceiveNoWait()) != null)
 						{
 							batch.Add(message);
@@ -55,7 +68,6 @@ namespace DotNet8Starter.BL.Services
 								catch (Exception ex)
 								{
 									_logger.LogError(ex, "Failed to process message {CorrelationId}", msg.NMSCorrelationID);
-									// maybe dead-letter or retry
 								}
 							}
 						}
