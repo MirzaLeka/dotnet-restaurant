@@ -127,4 +127,265 @@ To stop the flood of `Information` logs in SQL Server:
 2. Use `builder.Host.UseSerilog((context, services, configuration) => configuration.ReadFrom.Configuration(context.Configuration));`
 3. (Optional) Add `.Filter.ByIncludingOnly(e => e.Level >= Warning)` if you want a hard global cutoff.
 
+# Part 2
+
+Excellent follow-up — and that’s a very nuanced distinction 👏
+
+You’re right:
+
+* `"Override": { "Microsoft": "Warning" }` *changes the minimum level* for Microsoft loggers — meaning they’ll still log **warnings and errors**.
+* But if you want to **keep other information logs** (like your own app’s) while **completely excluding Microsoft’s `Information` noise** — you can do it with a **filter**, not with an override.
+
+Let’s break it down.
+
 ---
+
+## 🧠 Goal
+
+Keep:
+
+* Your own `Information`, `Warning`, `Error`, etc. logs.
+  Exclude:
+* Only Microsoft logs **at the Information level**.
+
+---
+
+## ✅ Option 1 — Use a `Filter.ByExcluding()` rule
+
+This is the most straightforward and precise way.
+
+In `Program.cs`:
+
+```csharp
+builder.Host.UseSerilog((context, services, configuration) => configuration
+    .ReadFrom.Configuration(context.Configuration)
+    .Filter.ByExcluding(logEvent =>
+        logEvent.Level == Serilog.Events.LogEventLevel.Information &&
+        logEvent.Properties.TryGetValue("SourceContext", out var source) &&
+        source.ToString().Contains("Microsoft"))
+);
+```
+
+### What this does:
+
+* Checks each log event.
+* If the level is `Information`
+* And the `SourceContext` (the logger’s category) contains `"Microsoft"`,
+* That log event is dropped before it ever hits your sinks.
+
+So:
+✅ Your own `Information` logs stay.
+🚫 Microsoft info logs vanish.
+
+---
+
+## ✅ Option 2 — Configuration-based filtering (no code)
+
+If you prefer to keep it inside **appsettings.json**, you can use `Serilog.Filters.Expressions` package:
+
+Install:
+
+```bash
+dotnet add package Serilog.Filters.Expressions
+```
+
+Then in your `appsettings.json`:
+
+```json
+"Serilog": {
+  "MinimumLevel": {
+    "Default": "Information"
+  },
+  "Filter": [
+    {
+      "Name": "ByExcluding",
+      "Args": {
+        "expression": "(@Level = 'Information' and SourceContext like 'Microsoft%')"
+      }
+    }
+  ],
+  "WriteTo": [
+    {
+      "Name": "MSSqlServer",
+      "Args": {
+        "connectionString": "YourConnectionString",
+        "tableName": "Logs"
+      }
+    }
+  ]
+}
+```
+
+This uses Serilog’s expression filter syntax and works entirely from configuration.
+
+---
+
+## ✅ Option 3 — Fine-grained filter on specific sink
+
+You can also apply that exclusion only to one sink (for example, exclude from SQL but still show in console):
+
+```csharp
+.WriteTo.MSSqlServer(
+    connectionString: "...",
+    tableName: "Logs",
+    restrictedToMinimumLevel: LogEventLevel.Information,
+    sinkOptions: new MSSqlServerSinkOptions { AutoCreateSqlTable = true }
+)
+.Filter.ByExcluding(logEvent =>
+    logEvent.Level == LogEventLevel.Information &&
+    logEvent.Properties.TryGetValue("SourceContext", out var src) &&
+    src.ToString().Contains("Microsoft"))
+.WriteTo.Console() // still shows everything
+```
+
+---
+
+## TL;DR — Summary
+
+| Approach                          | Description                                | Keeps your Info logs? | Code or Config |
+| --------------------------------- | ------------------------------------------ | --------------------- | -------------- |
+| Override `"Microsoft": "Warning"` | Changes min level for Microsoft            | ✅                     | Config         |
+| Filter.ByExcluding                | Dynamically drops only Microsoft info logs | ✅                     | Code           |
+| Serilog.Filters.Expressions       | Same as above, but via appsettings.json    | ✅                     | Config         |
+| Per-sink filter                   | Filter only for certain sinks              | ✅                     | Code           |
+
+---
+
+👉 **Best practical setup** for your case:
+
+```csharp
+builder.Host.UseSerilog((context, services, configuration) => configuration
+    .ReadFrom.Configuration(context.Configuration)
+    .Filter.ByExcluding(e =>
+        e.Level == LogEventLevel.Information &&
+        e.Properties.ContainsKey("SourceContext") &&
+        e.Properties["SourceContext"].ToString().StartsWith("\"Microsoft"))
+);
+```
+
+This way you keep all your app’s `Information` logs, and your SQL Server sink stays clean of noisy `Microsoft.Hosting.Lifetime` and `Microsoft.AspNetCore` entries.
+
+---
+
+# Part 3
+
+Perfect — here’s a **clean, production-ready setup** that:
+✅ Logs to SQL Server
+✅ Keeps your app’s `Information`, `Warning`, `Error`, etc.
+🚫 Excludes *only* Microsoft’s `Information` logs (but still keeps Microsoft warnings/errors)
+✅ Loads everything from configuration
+✅ Uses the standard `Program.cs` style for .NET 6–8
+
+---
+
+## 🗂️ `appsettings.json`
+
+```json
+{
+  "Serilog": {
+    "Using": [ "Serilog.Sinks.Console", "Serilog.Sinks.MSSqlServer" ],
+    "MinimumLevel": {
+      "Default": "Information",
+      "Override": {
+        "System": "Warning"
+      }
+    },
+    "Enrich": [ "FromLogContext", "WithMachineName", "WithThreadId" ],
+    "WriteTo": [
+      {
+        "Name": "Console"
+      },
+      {
+        "Name": "MSSqlServer",
+        "Args": {
+          "connectionString": "Server=.;Database=LogsDb;Trusted_Connection=True;",
+          "tableName": "Logs",
+          "autoCreateSqlTable": true
+        }
+      }
+    ]
+  }
+}
+```
+
+🟢 Notice:
+
+* We *don’t* override `Microsoft` to `Warning`.
+* We only override `System`, because it’s rarely useful at `Information`.
+* The filter to exclude Microsoft info logs will be in code.
+
+---
+
+## ⚙️ `Program.cs`
+
+```csharp
+using Serilog;
+using Serilog.Events;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// --- Configure Serilog ---
+builder.Host.UseSerilog((context, services, configuration) =>
+{
+    configuration
+        .ReadFrom.Configuration(context.Configuration)
+        .ReadFrom.Services(services)
+        .Enrich.FromLogContext()
+        // 🧠 Filter: Drop only Microsoft logs that are at Information level
+        .Filter.ByExcluding(logEvent =>
+            logEvent.Level == LogEventLevel.Information &&
+            logEvent.Properties.TryGetValue("SourceContext", out var src) &&
+            src.ToString().StartsWith("\"Microsoft"));
+});
+
+builder.Services.AddControllers();
+
+var app = builder.Build();
+
+app.MapControllers();
+
+app.Run();
+```
+
+---
+
+### 🧩 What happens at runtime
+
+| Log Source                            | Level       | Result          |
+| ------------------------------------- | ----------- | --------------- |
+| `Microsoft.AspNetCore.Hosting`        | Information | 🚫 Filtered out |
+| `Microsoft.AspNetCore.Server.Kestrel` | Warning     | ✅ Logged        |
+| `System.Data.SqlClient`               | Warning     | ✅ Logged        |
+| `YourApp.Controllers.HomeController`  | Information | ✅ Logged        |
+| `YourApp.Services.MyService`          | Error       | ✅ Logged        |
+
+---
+
+### 💡 Bonus: Optional console theme & table column schema
+
+If you want your SQL table to look nicer and store more structured data, you can add this under the MSSqlServer sink:
+
+```json
+"Args": {
+  "connectionString": "Server=.;Database=LogsDb;Trusted_Connection=True;",
+  "tableName": "Logs",
+  "autoCreateSqlTable": true,
+  "columnOptionsSection": {
+    "additionalColumns": [
+      { "ColumnName": "MachineName", "DataType": "nvarchar", "AllowNull": true },
+      { "ColumnName": "ThreadId", "DataType": "int", "AllowNull": true }
+    ]
+  }
+}
+```
+
+---
+
+### 🧠 Key takeaway
+
+* Use **filters** for selective exclusions (Microsoft info only).
+* Use **overrides** when you want to change the minimum level globally for a namespace.
+* Filters are more precise and don’t block warnings/errors from that namespace.
+
+---
+
