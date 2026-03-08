@@ -41,17 +41,17 @@ public class HourlyReaderWorker : BackgroundService
 
         // create a scope so DbContext is scoped per run
         using var scope = _services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        //var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
         // If your table is small: simple read:
         // var all = await db.MyEntities.AsNoTracking().ToListAsync(cancellationToken);
         // foreach (var e in all) { /* process */ }
 
         // For bigger tables: stream with AsAsyncEnumerable to avoid materializing everything:
-        await foreach (var entity in db.MyEntities
-                                         .AsNoTracking()
-                                         .AsAsyncEnumerable()
-                                         .WithCancellation(cancellationToken))
+        //await foreach (var entity in db.MyEntities
+        //                                 .AsNoTracking()
+        //                                 .AsAsyncEnumerable()
+        //                                 .WithCancellation(cancellationToken))
         {
             // process each entity
             // consider projecting to a lightweight DTO to reduce transfer size
