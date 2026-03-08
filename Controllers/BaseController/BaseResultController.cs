@@ -37,7 +37,7 @@ namespace DotNet8Starter.Controllers.BaseController
 		{
 			return new ProblemDetails
 			{
-				Title = GetExceptionTitle(result.ExceptionType),
+				Title = GetExceptionTitle(result.ResultStatus),
 				Detail = result.ExceptionMessage,
 				Status = statusCode,
 				Instance = $"{request.Method} {request.Path}",
@@ -48,12 +48,12 @@ namespace DotNet8Starter.Controllers.BaseController
 			};
 		}
 
-		private static string GetExceptionTitle(ResultException ex)
+		private static string GetExceptionTitle(ResultStatus ex)
 		{
 			return ex switch
 			{
-				ResultException.ValidationException => "Validation Exception",
-				ResultException.NotFoundException => "Not Found Exception",
+				ResultStatus.BadRequestException => "Validation Exception",
+				ResultStatus.NotFoundException => "Not Found Exception",
 				_ => "Internal Server Exception"
 			};
 		}

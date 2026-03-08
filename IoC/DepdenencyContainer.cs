@@ -8,6 +8,7 @@ using DotNet8Starter.IoC.Extensions.Health;
 using DotNet8Starter.IoC.Extensions.HTTP;
 using DotNet8Starter.IoC.Extensions.Logging;
 using DotNet8Starter.IoC.Extensions.Swagger;
+using DotNet8Starter.IoC.Middleware;
 
 namespace DotNet8Starter.IoC
 {
@@ -43,14 +44,22 @@ namespace DotNet8Starter.IoC
 
 			#endregion
 
+			services.AddSingleton(typeof(IAppLogger<>), typeof(AppLogger<>));
+
+			services.AddTransient<CharactersAuthHandler>();
+			services.AddScoped<ICharactersService, CharactersService>();
 			services.AddScoped<IOrcherstrationService, OrcherstrationService>();
 			services.AddScoped<ILogOrcherstrationExceptionsService, LogOrcherstrationExceptionsService>();
 			services.AddScoped<IOrderService, OrderService>();
 			services.AddScoped<IReplicationService, ReplicationService>();
+			services.AddScoped<IResultExamplesService, ResultExamplesService>();
 
 
 			services.AddSingleton<IAMQPublisherService, AMQPublisherService>();
-			services.AddHostedService<WorkerService>();
+			//services.AddHostedService<WorkerService>();
+
+
+			//services.AddScoped<IJsonPlaceholderService, JsonPlaceholderService>();
 
 			return services;
 		}
